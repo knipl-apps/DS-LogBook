@@ -1,0 +1,31 @@
+<!-- kapLogBookAuth.html -->
+<style>
+  /* These styles will be moved to kapLogBookCSS.html later */
+  #auth-modal-overlay {
+    background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+  }
+  .auth-card {
+    background: #ffffff;
+    border-top: 4px solid var(--kap-primary);
+  }
+  .auth-input:focus {
+    border-color: var(--kap-primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+</style>
+
+<div id="auth-modal-overlay" class="auth-modal-overlay">
+  <div class="auth-card auth-modal-card">
+    <h2 class="auth-modal-title">Daily Log Book Entry Application</h2>
+    <p class="auth-modal-subtitle">Access Validation Required</p>
+    <div class="auth-input-container">
+      <label class="log-label auth-input-label">Registered Email</label>
+      <input type="email" id="auth-email-input" class="log-input auth-input" placeholder="knipl.apps@gmail.com">
+      <p id="auth-error-msg" class="auth-error-message"></p>
+    </div>
+    
+    <button onclick="handleManualLogin()" class="log-btn-primary auth-submit-button">
+      Click to Verify Email
+    </button>
+  </div>
+</div>

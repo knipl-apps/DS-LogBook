@@ -1,0 +1,622 @@
+<!-- kapLogBookCSS.html -->
+<style>
+  /* ============================================
+     1. CSS RESETS & GLOBAL OVERRIDES
+     ============================================ */
+  
+  /* Remove Spinner controls for number inputs */
+  input::-webkit-outer-spin-button,
+  input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  
+  input[type=number] {
+    -moz-appearance: textfield;
+  }
+  
+  /* Force datalist arrow visibility */
+  input[list] {
+    appearance: none;
+    -moz-appearance: none;
+    -webkit-appearance: none;
+  }
+  
+  #logVehicleID::-webkit-calendar-picker-indicator {
+    display: block !important;
+    opacity: 1 !important;
+  }
+  
+  /* ============================================
+     2. LAYOUT & CONTAINERS
+     ============================================ */
+  
+  .log-container {
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 0px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  
+  /* KAP Core Header adjustments for mobile */
+  .kap-header {
+    padding: 8px 12px !important;
+  }
+  
+  .kap-header h1 {
+    font-size: 14px !important;
+    margin: 0 !important;
+    letter-spacing: 0.01em;
+  }
+  
+  .kap-header p {
+    font-size: 10px !important;
+    margin: 0 !important;
+    opacity: 0.9;
+  }
+  
+  /* ============================================
+     3. CARD COMPONENTS
+     ============================================ */
+  
+  .log-card {
+    background: var(--bg-surface);
+    margin-top: -1px !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 0px !important;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .log-card:first-child {
+    margin-top: 0 !important;
+  }
+  
+  .log-card-body {
+    padding: 6px 10px !important;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  /* Card variations */
+  .log-card-hidden {
+    display: none;
+    border-top: 1px solid #cbd5e1;
+    margin-top: 10px;
+  }
+  
+  .log-card-bordered {
+    border-top: 1px solid #cbd5e1;
+    margin-top: 10px;
+  }
+  
+  /* ============================================
+     4. FORM ELEMENTS
+     ============================================ */
+  
+  .log-form-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 0 !important;
+    width: 100%;
+  }
+  
+  .log-label {
+    font-size: 9px !important;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  
+  /* Required field labels */
+  .log-label-required {
+    color: #be123c !important;
+    font-weight: bold !important;
+  }
+  
+  .required-asterisk {
+    color: red;
+  }
+  
+  .instruction-highlight {
+    color: #be123c;
+    font-weight: bold;
+  }
+  
+  /* Form inputs */
+  .log-input {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 32px !important;
+    font-size: 14px !important;
+    padding: 4px 8px !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    border: 1px solid #cbd5e1;
+    background-color: #ffffff;
+  }
+  
+  /* Date input specific */
+  input[type="date"].log-input {
+    min-width: 0 !important;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  
+  /* Locked/disabled inputs */
+  .log-input-locked {
+    background-color: #f1f5f9 !important;
+    color: #94a3b8 !important;
+    border: 1px dashed #cbd5e1 !important;
+    cursor: not-allowed;
+  }
+  
+  /* Textarea */
+  .log-textarea {
+    height: auto;
+    min-height: 60px;
+  }
+  
+  /* ============================================
+     5. GRID LAYOUTS
+     ============================================ */
+  
+  /* Two-column split */
+  .log-row-split {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    column-gap: 8px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    align-items: end;
+  }
+  
+  /* Three-column layout */
+  .log-row-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  
+  /* Spacing utilities */
+  .log-row-margin-top {
+    margin-top: 8px;
+  }
+  
+  /* Masonry grid */
+  .masonry-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0px !important;
+    width: 100%;
+  }
+  
+  .log-full-width {
+    grid-column: span 2;
+  }
+  
+  /* 40/60 split row */
+  .kap-chameleon-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  
+  .kap-split-40 {
+    flex: 0 0 40%;
+  }
+  
+  .kap-split-60 {
+    flex: 0 0 60%;
+    text-align: right;
+    font-weight: bold;
+    color: var(--kap-primary);
+    padding-right: 5px;
+  }
+  
+  /* ============================================
+     6. BUTTONS & CONTROLS
+     ============================================ */
+  
+  /* Main action buttons */
+  .btn-save {
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  .btn-submit-log {
+    /* Inherits from .btn-save or define specific styles */
+  }
+  
+  /* Lock header button */
+  .btn-lock-header {
+    width: 40%;
+    margin: 0 auto;
+    display: block;
+    background-color: #64748b;
+    color: #c0cddf;
+    border: 1px solid #cbd5e1;
+    transition: all 0.3s ease;
+    padding: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  
+  .btn-lock-header:hover {
+    background-color: #475569;
+    color: white;
+  }
+  
+  /* Button containers */
+  .lock-header-button-container {
+    margin-top: 15px;
+    text-align: center;
+  }
+  
+  /* Toggle switch */
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+  }
+  
+  .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #cbd5e1;
+    transition: .4s;
+  }
+  
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .4s;
+  }
+  
+  input:checked + .slider {
+    background-color: #2563eb;
+  }
+  
+  input:checked + .slider:before {
+    transform: translateX(26px);
+  }
+  
+  .slider.round {
+    border-radius: 24px;
+  }
+  
+  .slider.round:before {
+    border-radius: 50%;
+  }
+  
+  .switch-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+    cursor: not-allowed;
+  }
+  
+  /* ============================================
+     7. SPECIAL COMPONENTS
+     ============================================ */
+  
+  /* Location lock message */
+  .location-lock-message {
+    display: none;
+    margin-top: 5px;
+    font-size: 11px;
+    color: #166534;
+    background: #e0f2fe;
+    padding: 2px;
+    border-radius: 4px;
+    border: 1px solid #bbf7d0;
+  }
+  
+  /* Diesel shelf */
+  .diesel-shelf {
+    display: none;
+    margin-top: 5px;
+    background: #e0f2fe;
+    border: 1px solid #bae6fd;
+    color: #166534;
+    padding: 2px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+  
+  /* Refuel toggle */
+  .refuel-toggle-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 15px;
+    padding: 8px;
+    background: #f1f5f9;
+    border-radius: 6px;
+  }
+  
+  .refuel-toggle-label {
+    margin: 0;
+    font-weight: 600;
+  }
+  
+  .refuel-fields-container {
+    display: none;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px dashed #cbd5e1;
+  }
+  
+  /* "Shelf" style */
+  .kap-persistent-shelf {
+    background: #eef2f7;
+    border-left: 4px solid var(--kap-primary);
+    padding: 8px 12px;
+    margin-bottom: 15px;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    display: none;
+  }
+  
+  /* Hidden reveal zones */
+  .kap-reveal-zone {
+    display: none;
+    background: #fafafa;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+  }
+  
+  .kap-reveal-zone.active {
+    display: flex !important;
+    gap: 6px;
+  }
+  
+  /* Remarks container */
+  .remarks-container {
+    margin-top: 10px;
+  }
+  
+  /* Activity wrapper */
+  .activity-wrapper {
+    border-top: 1px solid #cbd5e1;
+    margin-top: 5px;
+    background-color: #f8fafc;
+    pointer-events: none;
+    transition: background-color 0.3s ease;
+  }
+  
+  /* Module work zone */
+  .module-work-zone {
+    opacity: 0.4;
+    pointer-events: none;
+    transition: all 0.4s ease;
+    filter: grayscale(1);
+  }
+  
+  .module-work-zone.cockpit-active {
+    opacity: 1;
+    pointer-events: auto;
+    filter: grayscale(0);
+  }
+  
+  .module-instructions {
+    text-align: center;
+    color: #64748b;
+    padding: 20px;
+    font-weight: 500;
+    line-height: 1.6;
+  }
+  
+  /* ============================================
+     8. TOAST NOTIFICATIONS
+     ============================================ */
+  
+  #toast-container {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 90%;
+    max-width: 350px;
+    pointer-events: none;
+  }
+  
+  .toast {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: slideDown 0.3s ease-out forwards;
+    pointer-events: auto;
+  }
+  
+  .toast-success {
+    background-color: #10b981;
+    border-left: 5px solid #064e3b;
+  }
+  
+  .toast-error {
+    background-color: #ef4444;
+    border-left: 5px solid #7f1d1d;
+  }
+  
+  .toast-warning {
+    background-color: #f59e0b;
+    border-left: 5px solid #78350f;
+    border-color: #78350f;
+    color: #fff;
+  }
+  
+  /* ============================================
+     9. AUTHENTICATION MODAL
+     ============================================ */
+  
+  .auth-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(10px);
+    background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+  }
+  
+  .auth-modal-card {
+    padding: 40px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    text-align: center;
+    background: #ffffff;
+    border-top: 4px solid var(--kap-primary);
+  }
+  
+  .auth-modal-title {
+    color: #1e293b;
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+  
+  .auth-modal-subtitle {
+    color: #64748b;
+    font-size: 14px;
+    margin-bottom: 30px;
+  }
+  
+  .auth-input-container {
+    text-align: left;
+    margin-bottom: 24px;
+  }
+  
+  .auth-input-label {
+    font-weight: 600;
+    color: #475569;
+  }
+  
+  .auth-input:focus {
+    border-color: var(--kap-primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  }
+  
+  .auth-error-message {
+    color: #ef4444;
+    font-size: 12px;
+    margin-top: 8px;
+    display: none;
+  }
+  
+  .auth-submit-button {
+    width: 100%;
+    height: 48px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+  }
+  
+  /* ============================================
+     10. ANIMATIONS & TRANSITIONS
+     ============================================ */
+  
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes fadeOut {
+    to {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .log-form-group-container {
+    animation: fadeIn 0.4s ease-in-out;
+  }
+  
+  /* ============================================
+     11. FIXES & OVERRIDES
+     ============================================ */
+  
+  /* Force visibility for Gatekeeper button */
+  #btn-lock-header {
+    display: block !important;
+    visibility: visible !important;
+    height: auto !important;
+    min-height: 45px !important;
+    opacity: 1 !important;
+    transition: background-color 0.3s ease;
+    margin-top: 15px;
+  }
+  
+  /* Fix for modal buttons */
+  #kap-confirm, #kap-cancel {
+    display: inline-block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+</style>

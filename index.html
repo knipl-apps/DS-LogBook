@@ -1,0 +1,202 @@
+<!-- File : index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <?!= KAP.Core.Html.getCoreCss(); ?>
+    <?!= include('kapLogBookCSS'); ?>
+</head>
+<body>
+    <?!= include('kapLogBookAuth'); ?>
+    <?!= KAP.Core.Html.getHeaderFooter({ appSubtitle: 'Daily Log Book' }); ?>
+    <?!= KAP.Core.Html.getGlobalLoader(); ?>
+
+    <div id="toast-container"></div>
+    
+    <div class="log-container">
+        <div class="log-card" id="group-1">
+            <input type="hidden" id="logSheetTxnMasterId">
+            <input type="hidden" id="logSheetStatus" value="Draft">
+            <div class="log-card-body">
+                <div class="log-row-split">
+                    <div class="log-form-group">
+                        <label class="log-label log-label-required">
+                            Entry Date <span class="required-asterisk">*</span>
+                        </label>
+                        <input type="date" id="logSheetDate" class="log-input" onblur="validateDate(this.value)">
+                    </div>
+                    <div class="log-form-group">
+                        <label class="log-label log-label-required">
+                            Module / Vehicle Category <span class="required-asterisk">*</span>
+                        </label>
+                        <select id="logSheetModuleID" class="log-input" onchange="onModuleChange(this.value)">
+                            <option value="">-- Select --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="log-row-split log-row-margin-top">
+                    <div class="log-form-group">
+                        <label class="log-label log-label-required">
+                            Select Site <span class="required-asterisk">*</span>
+                        </label>
+                        <select id="sel-site" class="log-input" onchange="onSiteChange(this.value)">
+                            <option value="">-- Select Site --</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="location-lock-msg" class="kap-persistent-shelf location-lock-message"></div>
+                <div id="diesel-shelf" class="kap-persistent-shelf diesel-shelf">
+                    <span id="shelf-vehicle-info"><b>Vehicle No</b></span> | 
+                    <span id="shelf-fuel-info">⛽ 0.00 Ltrs</span> | 
+                    <span id="shelf-odo-info">KM Reading: 0</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="log-card log-card-hidden" id="group-2">
+            <div class="log-card-body">
+                <div class="log-row-split">
+                    <div class="log-form-group">
+                        <label class="log-label log-label-required">
+                            Village <span class="required-asterisk">*</span>
+                        </label>
+                        <select id="sel-village" class="log-input" onchange="onVillageChange(this.value)">
+                            <option value="">-- Select --</option>
+                        </select>
+                    </div>
+                    <div class="log-form-group">
+                        <label class="log-label log-label-required">
+                            Location/Point <span class="required-asterisk">*</span>
+                        </label>
+                        <select id="sel-location" class="log-input" onchange="onLocationChange(this.value)">
+                            <option value="">-- Select --</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="log-card log-card-bordered" id="group-3">
+            <div class="log-card-body">
+                <div class="log-row-split">
+                    <div class="log-form-group">
+                        <label class="log-label log-label-required">
+                            Vehicle Number <span class="required-asterisk">*</span>
+                        </label>
+                        <input list="logVehicleID_list" id="logVehicleID" class="log-input" placeholder="Type to Select..." 
+                               onchange="onVehicleSelect(this.value); checkFuelValidation()"
+                               oninput="checkFuelValidation()">
+                        <datalist id="logVehicleID_list"></datalist> 
+                    </div>
+                    <div class="log-form-group">
+                        <label class="log-label">Vehicle Owner</label>
+                        <input type="text" id="logVehicleOwner" class="log-input" readonly placeholder="Auto-Fill">
+                    </div>
+                </div>
+
+                <div class="refuel-toggle-container">
+                    <span class="refuel-toggle-label">Refueling Required?</span>
+                    <label class="switch">
+                        <input type="checkbox" id="refuelSwitch" onchange="toggleRefuelUI(this.checked)">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div id="refuel-fields" class="refuel-fields-container">
+                    <div class="log-row-split">
+                        <div class="log-form-group">
+                            <label class="log-label">Fuel Source</label>
+                            <select id="tankerNoOrPump" class="log-input" onchange="checkFuelValidation()"></select>
+                        </div>
+                        <div class="log-form-group">
+                            <label class="log-label">Fueling Person</label>
+                            <input type="text" id="dieselPersonName" class="log-input" placeholder="Name" onblur="checkFuelValidation()">
+                        </div>
+                    </div>
+                    <div class="log-row-split log-row-margin-top">
+                        <div class="log-form-group">
+                            <label class="log-label">Diesel Qty (Ltrs)</label>
+                            <input type="number" id="dieselDumpLtrs" class="log-input" step="0.01" placeholder="0.00" onblur="validateDieselQty(this); checkFuelValidation()">
+                        </div>
+                        <div class="log-form-group">
+                            <label class="log-label">Odo / Hr Reading</label>
+                            <input type="number" id="vehicleOdoReading" class="log-input" step="0.01" placeholder="0.00" onblur="checkFuelValidation()">
+                        </div>
+                    </div>
+                    <input type="hidden" id="dieselDumpTime">                 
+                </div>
+
+                <div class="log-row-3">
+                    <div class="log-form-group">
+                        <label class="log-label log-label-required">
+                            Machine Operator <span class="required-asterisk">*</span>
+                        </label>
+                        <select id="sel-operator" class="log-input" required onchange="checkFuelValidation()">
+                            <option value="">-- Select --</option>
+                        </select>
+                    </div>
+                    <div class="log-form-group">
+                        <label class="log-label log-label-required">
+                            Site Supervisor <span class="required-asterisk">*</span>
+                        </label>
+                        <select id="sel-supervisor" class="log-input" required onchange="checkFuelValidation()">
+                            <option value="">-- Select --</option>
+                        </select>
+                    </div>
+                    <div class="log-form-group">
+                        <label class="log-label log-label-required">
+                            Site In-Charge <span class="required-asterisk">*</span>
+                        </label>
+                        <select id="sel-incharge" class="log-input" required onchange="checkFuelValidation()">
+                            <option value="">-- Select --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="log-form-group remarks-container">
+                    <label class="log-label log-label-required">
+                        Log Book Header Remarks (Min 15 Chars.) <span class="required-asterisk">*</span>
+                    </label>
+                    <textarea id="workRemarkHead" class="log-input log-textarea" rows="2" placeholder="Compulsory overall shift description..."></textarea>
+                </div>
+
+                <div class="lock-header-button-container">
+                    <button type="button" class="btn-lock-header" id="btn-lock-header" onclick="validateAndLockHeader()">
+                        Vehicle & Fuel Data
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="log-card activity-wrapper" id="activity-wrapper">
+            <div class="log-card-body">
+                <div class="log-row-split">
+                    <div class="log-form-group">
+                        <label class="log-label log-label-required">
+                            Cost Center / Activity <span class="required-asterisk">*</span>
+                        </label>
+                        <select id="logModCCId" class="log-input" disabled onchange="handleLogicGate(this)">
+                            <option value="">-- Select Cost Centre First --</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div id="module-work-zone" class="module-work-zone">
+                <div class="module-instructions">
+                    1. Select Module / Vehicle Category First to Load Activity.<br>
+                    2. All Fields Marked with <span class="instruction-highlight">Red Colour *</span> Are Compulsory.
+                </div>
+            </div>            
+        </div>
+    </div>
+
+    <div class="fab-container">
+        <button class="btn-submit-log" onclick="submitLog()">
+            <span>Submit Daily Log</span>
+        </button>
+    </div>
+
+    <?!= KAP.Core.Html.getClientJS(); ?>
+    <?!= include('mainJS'); ?>
+</body>
+</html>

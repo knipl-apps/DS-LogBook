@@ -1,0 +1,1113 @@
+<!-- mainJS.html -->
+<script>
+/**
+ * ============================================================================
+ * KNIPL Logbook - Main Javascript (V1.0)
+ * 
+ * Table Of Contents:
+ * 1. Global Variables & Initialization
+ * 2. Authentication Functions
+ * 3. Form Logic & Data Handlers
+ * 4. Validation Functions  
+ * 5. Chameleon Engine (Dynamic Grid)
+ * 6. Submission & Dashboard Functions
+ * 7. Ui Helper Functions
+ * 8. Utility Functions
+ * ============================================================================
+ */
+/* ============================================================================
+   1. GLOBAL VARIABLES & INITIALIZATION
+   ============================================================================ */
+let GLOBAL_LOC_DATA = {};
+let GLOBAL_FUEL_DATA = {};
+let GLOBAL_MODULES = [];
+let mainJSHtml = 'mainJS.html';
+let functionName;
+
+// DOM Ready Initialization
+document.addEventListener('DOMContentLoaded', function() {
+  console.log(`[${mainJSHtml}][@DOMContentLoaded]`); 
+  initApp();
+});
+/* ============================================================================
+   2. AUTHENTICATION FUNCTIONS
+   ============================================================================ */
+/**
+ * Handle Manual Email Login
+ */
+async function handleManualLogin() {
+  const emailInput = document.getElementById('auth-email-input').value.toLowerCase().trim();
+  const errorMsg = document.getElementById('auth-error-msg');
+  console.log(`[${mainJSHtml}][@handleManualLogin]`);
+  // Basic Regex for Email validation
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailPattern.test(emailInput)) {
+    errorMsg.innerText = "Please enter a valid email address.";
+    errorMsg.style.display = 'block';
+    return;
+  }
+  // Transition to loading state
+  document.getElementById('auth-modal-overlay').style.display = 'none';
+  KAP.API.toggleLoader(true, "KAP : Authenticating Identity...");
+  // Re-run initialization with email
+  initApp(emailInput);
+}
+/**
+ * Initialize Application (The Engine)
+ */
+async function initApp(retryEmail = null) {
+  console.log(`[${mainJSHtml}][@initApp]`); 
+  // 1. AUTH CHECK - Force manual entry by ignoring localStorage for now
+  let savedEmail = retryEmail; 
+  if (!savedEmail) {
+    document.getElementById('auth-modal-overlay').style.display = 'flex';
+    return;
+  }
+  // Initial loader
+  KAP.API.toggleLoader(true, 'KAP : Verifying Identity...');
+  try {
+    // 2. CALL THE COMBINED AUTH & DATA FUNCTION
+    const resp = await KAP.API.call('getInitialAppDataWithAuth', savedEmail);
+    // Extract payload using KAP Standard
+    const payload = (resp && resp.data) ? resp.data : resp;
+    // Check if Auth failed on backend
+    if (payload.needsLogin) {
+      localStorage.removeItem('kap_verified_email');
+      document.getElementById('auth-modal-overlay').style.display = 'flex';
+      if(payload.error) document.getElementById('auth-error-msg').innerText = payload.error;
+      KAP.API.toggleLoader(false);
+      return;
+    }
+    if (!payload || !payload.master) throw new Error("Payload structure invalid.");
+    // 3. THE PREMIUM WELCOME
+    document.getElementById('auth-modal-overlay').style.display = 'none';
+    // CRITICAL FIX: Set USER_NAME BEFORE using it
+    window.USER_NAME = payload.userName || "User";
+    console.log(`[${mainJSHtml}][@handleManualLogin] window.USER_NAME ${window.USER_NAME}`); 
+    KAP.API.toggleLoader(true, `KAP : Welcomes, ${window.USER_NAME}...`);
+    // 2-second welcome pause
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    // 4. EXPLICIT GLOBAL PARKING
+    window.GLOBAL_PAYLOAD = payload; 
+    window.GLOBAL_LOC_DATA = payload.locations || {};
+    window.GLOBAL_FUEL_DATA = payload.fuel || {};
+    window.GLOBAL_VEHICLE_MASTER = payload.master.vehicles || [];
+    window.GLOBAL_CC_LIST = payload.master.costCenters || [];
+    window.GLOBAL_MODULES = payload.modules || [];
+    // 5. INITIALIZE UI
+    initializeGroupA(payload);
+    // Finalizing local storage
+    localStorage.setItem('kap_verified_email', savedEmail);
+    KAP.API.toggleLoader(false);
+    console.log('🎯 Success: initApp Ready.');
+  } catch (err) {
+    console.error('Init Failed:', err);
+    KAP.API.toggleLoader(true, 'initApp - System Error: ' + err);
+  }
+}
+/* ============================================================================
+   3. FORM LOGIC & DATA HANDLERS
+   ============================================================================ */
+/**
+ * Initialize Group A (Header & Context)
+ */
+function initializeGroupA(payload) {
+  console.log(`[${mainJSHtml}][@initializeGroupA]`); 
+  // Set today's date
+  const dateInput = document.getElementById('logSheetDate');
+  if (dateInput) {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    dateInput.value = `${y}-${m}-${d}`;
+  }
+  // Populate module dropdown
+  const modSelect = document.getElementById('logSheetModuleID');
+  if (modSelect && payload.modules) {
+    resetDropdown(modSelect, '-- Select --');
+    payload.modules.forEach(m => addOption(modSelect, m.moduleId, m.moduleName));
+  }
+  // Populate site dropdown
+  const siteSelect = document.getElementById('sel-site');
+  if (siteSelect && payload.sites) {
+    resetDropdown(siteSelect, '-- Select Site --');
+    payload.sites.forEach(s => {
+      if(s.id) addOption(siteSelect, s.id, s.name);
+    });
+  }  
+  // Clear vehicle datalist
+  const radarScreen = document.getElementById('logVehicleID_list');
+  if (radarScreen) radarScreen.innerHTML = '';
+  console.log("✅ Group A Initialization Complete.");
+}
+/**
+ * Handle Module Selection Change
+ */
+function onModuleChange(moduleId) {
+  if (!moduleId) return;
+  console.log(`[onModuleChange] Configuring Cockpit for: ${moduleId}`); 
+  // 1. Reset Vehicle & Fuel UI
+  const vehicleInput = document.getElementById('logVehicleID');
+  const ownerInput = document.getElementById('logVehicleOwner');
+  const refuelSwitch = document.getElementById('refuelSwitch');
+  if (vehicleInput) vehicleInput.value = ''; 
+  if (ownerInput) ownerInput.value = '';
+  if (refuelSwitch) {
+    refuelSwitch.checked = false;
+    refuelSwitch.parentElement.classList.add('switch-disabled');
+  }
+  // 2. Enable & Filter CC Selector
+  const ccSelect = document.getElementById('logModCCId');
+  if (ccSelect) ccSelect.disabled = false;
+  if (window.GLOBAL_CC_LIST) {
+    const filteredCC = window.GLOBAL_CC_LIST.filter(cc => cc.logSheetModuleID === moduleId);
+    populateCostCenters(filteredCC);
+  }
+  // 3. Generate IDs & Filter Radar
+  generateMasterId();
+  filterVehiclesByModule(moduleId);
+  // 4. THE CHAMELEON KICK (Visual Finale)
+  if (typeof renderModuleGrid === "function") {
+    renderModuleGrid(moduleId);
+    // Ensure the work zone is visible and interactive
+    const workZone = document.getElementById('module-work-zone');
+    if (workZone) {
+      workZone.style.opacity = "1";
+      workZone.style.pointerEvents = "auto";
+    }
+  } else {
+    console.warn("Grid Engine (renderModuleGrid) not yet loaded.");
+  }
+}
+/**
+ * Data-Driven Vehicle Filtering by Module
+ */
+function filterVehiclesByModule(selectedModuleId) {
+  console.log(`[${mainJSHtml}][@filterVehiclesByModule]`); 
+  const dataList = document.getElementById('logVehicleID_list');
+  if (!dataList || !window.GLOBAL_PAYLOAD) return;
+  dataList.innerHTML = '';
+  const activeModule = window.GLOBAL_PAYLOAD.modules.find(m => m.moduleId === selectedModuleId);
+  if (!activeModule) return;
+  const activeModuleName = activeModule.moduleName.toLowerCase();
+  const allVehicles = window.GLOBAL_VEHICLE_MASTER;
+  const specialistMakes = ['excavator', 'tm', 'boom'];
+  const tankerMake = 'diesel tanker';
+  let count = 0;
+  allVehicles.forEach(v => {
+    // 1. Universal Gatekeeper (Rule #1)
+    if (v.isActive !== 'Y') return false;
+    const vMake = (v.vehicleMake || "").toLowerCase().trim();
+    if (vMake === tankerMake) return false; 
+    // 2. Logic Branching (Rule #2)
+    const isGeneralModule = activeModuleName.includes('general');
+    let shouldInclude = false;
+    if (isGeneralModule) {
+      // GENERAL: All EXCEPT Excavator, TM, Boom
+      shouldInclude = !specialistMakes.includes(vMake);
+    } else {
+      // SPECIALISTS: Match specific category
+      shouldInclude = activeModuleName.includes(vMake);
+    }
+    // 3. Populate the Radar
+    if (shouldInclude) {
+      const option = document.createElement('option');
+      option.value = v.vehicleRegnNo; 
+      option.textContent = `${v.vehicleRegnNo} | ${v.vehicleMake}`;
+      option.setAttribute('data-id', v.vehicleID);
+      option.setAttribute('data-make', v.vehicleMake);
+      const ownerVal = v.ownedRented || 'Unknown';
+      option.setAttribute('data-owner', ownerVal);
+      dataList.appendChild(option);
+      count++;
+    }
+  });
+  // Firefox compatibility fix
+  const input = document.getElementById('logVehicleID');
+  if (input) {
+    console.log(`[Radar] Kicking Firefox for ${count} vehicles.`);
+    input.setAttribute('list', '');
+    setTimeout(() => {
+      input.setAttribute('list', 'logVehicleID_list');
+    }, 10);
+  }
+  console.log(`📡 Radar Sync: ${count} machines identified for ${activeModule.moduleName}`);
+}
+/**
+ * Auto-Fill Owner details when Vehicle is selected
+ */
+function onVehicleSelect(regnNo) {
+  console.log(`[${mainJSHtml}][@onVehicleSelect Regn No : ] ${regnNo}`); 
+  if (!regnNo) return;
+  const dataList = document.getElementById('logVehicleID_list');
+  const options = dataList.querySelectorAll('option');
+  let foundOwner = "";
+  for (let i = 0; i < options.length; i++) {
+    if (options[i].value.trim() === regnNo.trim()) {
+      foundOwner = options[i].getAttribute('data-owner');
+      break;
+    }
+  }
+  const ownerInput = document.getElementById('logVehicleOwner');
+  if (ownerInput) {
+    ownerInput.value = foundOwner;
+    if (foundOwner && foundOwner !== "Unknown") {
+      showToast(`Machine Identified: ${regnNo}`, "success");
+      // Unlock work wrapper
+      const workWrapper = document.getElementById('activity-wrapper');
+      if (workWrapper) {
+        workWrapper.style.opacity = "1";
+        workWrapper.style.pointerEvents = "auto";
+      }
+      // Enable refuel switch
+      const refuelSwitch = document.getElementById('refuelSwitch');
+      if (refuelSwitch) {
+        refuelSwitch.parentElement.classList.remove('switch-disabled');
+      }
+    }
+  }
+}
+/**
+ * Handle Site Selection (Transitions Group 1 -> Group 2)
+ * USING THE ENHANCED VERSION WITH populateAccountabilityNames
+ */
+function onSiteChange(siteId) {
+  console.log(`[${mainJSHtml}][@onSiteChange Site Id : ] ${siteId}`); 
+  const group2 = document.getElementById('group-2');
+  const villageSelect = document.getElementById('sel-village');
+  const locationSelect = document.getElementById('sel-location'); 
+  const lockMsg = document.getElementById('location-lock-msg');
+  // 1. THE CLEANING CREW (Reset Downstream UI)
+  if (lockMsg) {
+    lockMsg.style.display = 'none';
+    lockMsg.innerHTML = '';
+  }
+  if (villageSelect) resetDropdown(villageSelect, '-- Select Village --');
+  if (locationSelect) resetDropdown(locationSelect, '-- Select Location --');
+  // RESET SHELF & ACTIVITY
+  const shelf = document.getElementById('diesel-shelf');
+  const group3 = document.getElementById('group-3');
+  if (shelf) shelf.style.display = 'none';
+  if (group3) group3.style.display = 'block';
+  const workWrapper = document.getElementById('activity-wrapper');
+  if (workWrapper) {
+    workWrapper.style.backgroundColor = "#f8fafc";
+    workWrapper.style.pointerEvents = "none";
+  }
+  // UNLOCK DATE PICKER (Allow correction if resetting)
+  const dateInput = document.getElementById('logSheetDate');
+  if (dateInput) {
+    dateInput.disabled = false;
+    dateInput.style.backgroundColor = "white";
+  }
+  // Reset Button State
+  checkFuelValidation(); 
+  // 2. SITE LOGIC
+  if (!siteId) {
+    if (group2) group2.style.display = 'none';
+    return;
+  }
+  // Populate accountability names
+  populateAccountabilityNames(siteId);
+  generateMasterId();
+  if (group2) group2.style.display = 'block';
+  if (villageSelect && window.GLOBAL_LOC_DATA[siteId]) {
+    Object.keys(window.GLOBAL_LOC_DATA[siteId]).forEach(v => addOption(villageSelect, v, v));
+  }
+  populateFuelSources(siteId);
+}
+/**
+ * Hybrid Populator: Tankers + Site Pumps
+ */
+function populateFuelSources(siteId) {
+  console.log(`[${mainJSHtml}][@populateFuelSources Site Id : ] ${siteId}`); 
+  const fuelSelect = document.getElementById('tankerNoOrPump');
+  if (!fuelSelect) return;
+  resetDropdown(fuelSelect, '-- Select Source --');
+  // 1. Tankers
+  if (window.GLOBAL_FUEL_DATA && window.GLOBAL_FUEL_DATA.tankers) {
+    window.GLOBAL_FUEL_DATA.tankers.forEach(t => {
+      addOption(fuelSelect, t.id, t.name);
+    });
+  }
+  // 2. Site Specific Pumps
+  if (window.GLOBAL_FUEL_DATA && window.GLOBAL_FUEL_DATA.siteGasMap) {
+    const sitePumps = window.GLOBAL_FUEL_DATA.siteGasMap[siteId];
+    if (sitePumps && Array.isArray(sitePumps)) {
+      sitePumps.forEach(p => {
+        addOption(fuelSelect, p.id, p.name);
+      });
+    }
+  }
+}
+/**
+ * Populate Personnel based on Site Selection
+ */
+function populateAccountabilityNames(siteId) {
+  console.log(`[${mainJSHtml}][@populateAccountabilityNames] Site: ${siteId}`);
+  const opSel = document.getElementById('sel-operator');
+  const supSel = document.getElementById('sel-supervisor');
+  const incSel = document.getElementById('sel-incharge');
+  // 1. Reset current options
+  resetDropdown(opSel, '-- Select Operator --');
+  resetDropdown(supSel, '-- Select Supervisor --');
+  resetDropdown(incSel, '-- Select InCharge --');
+  // 2. Safety Check
+  if (!siteId || !window.GLOBAL_PAYLOAD || !window.GLOBAL_PAYLOAD.meta) {
+    console.warn("Accountability Meta Data missing in Global Payload.");
+    return;
+  }
+  // 3. Filter and Populate
+  const siteStaff = window.GLOBAL_PAYLOAD.meta.filter(row => row.logSheetSiteID === siteId);
+  siteStaff.forEach(person => {
+    const role = person.logSheetSitePerRole;
+    const name = person.logSheetSitePerName;
+    if (role === 'Operator') addOption(opSel, name, name);
+    if (role === 'Supervisor') addOption(supSel, name, name);
+    if (role === 'InCharge') addOption(incSel, name, name);
+  });
+}
+/* ============================================================================
+   4. VALIDATION FUNCTIONS  
+   ============================================================================ */
+/**
+ * Validate Date Input
+ */
+function validateDate(selectedDateStr) {
+  console.log(`[${mainJSHtml}][@validateDate]`);
+  if (!selectedDateStr) return;
+  const selectedDate = new Date(selectedDateStr);
+  selectedDate.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  // 1. FUTURE DATE CHECK
+  if (selectedDate > today) {
+    showToast(" Future Date, Not Allowed. Resetting to Today. ", "warning"); 
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    document.getElementById('logSheetDate').value = `${y}-${m}-${d}`;
+    return;
+  }
+  // 2. STALE DATE WARNING (Relaxed to > 3 Days)
+  const diffTime = Math.abs(today - selectedDate);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+  if (diffDays > 3) {
+    showToast(`⚠️ Entering Log Book of Date ${selectedDateStr}, Are you Sure?`, "warning");
+  }
+  generateMasterId();
+}
+/**
+ * Toggle Refuel UI
+ */
+function toggleRefuelUI(isChecked) {
+  console.log(`[${mainJSHtml}][@toggleRefuelUI]`);
+  const fields = document.getElementById('refuel-fields');
+  const siteId = document.getElementById('sel-site').value;
+  if (isChecked) {
+    if (!siteId) {
+      showToast("Please select a Site first!", "warning");
+      document.getElementById('refuelSwitch').checked = false;
+      return;
+    }
+    fields.style.display = 'block';
+    populateFuelSources(siteId);
+  } else {
+    fields.style.display = 'none';
+  }
+  // Trigger validation check
+  checkFuelValidation();
+}
+/**
+ * Validate and Lock Header Data
+ */
+function validateAndLockHeader() {
+  console.log(`[${mainJSHtml}][@validateAndLockHeader]`);
+  // 1. Mandatory Location & Personnel Check
+  const village = document.getElementById('sel-village').value;
+  const location = document.getElementById('sel-location').value;
+  const op = document.getElementById('sel-operator').value;
+  const sup = document.getElementById('sel-supervisor').value;
+  const inc = document.getElementById('sel-incharge').value;
+  if (!op || !sup || !inc) {
+    showToast("Operator, Supervisor, and InCharge are mandatory! ⚠️", "error");
+    return;
+  }
+  // 2. The 15-Character Decency Guard
+  const remarkEl = document.getElementById('workRemarkHead');
+  const remarkVal = remarkEl.value.trim();
+  if (remarkVal.length < 15) {
+    remarkEl.style.border = "2px solid #ef4444";
+    showToast("Header Remarks must be at least 15 characters! ✍️", "warning");
+    remarkEl.focus();
+    return;
+  }
+  remarkEl.style.border = "1px solid #cbd5e1"; 
+  if (!village || !location) {
+    showToast("Village & Location are Mandatory! ⚠️", "error");
+    const group2 = document.getElementById('group-2');
+    if(group2) {
+      group2.style.border = "2px solid #ef4444";
+      setTimeout(() => { group2.style.border = "none"; }, 2000);
+    }
+    return; 
+  }
+  // 3. Vehicle & Fuel Check
+  const vehNo = document.getElementById('logVehicleID').value;
+  if (!vehNo || vehNo.length < 4) {
+    showToast(" Machine ID is missing ⚠️", "warning");
+    return;
+  }
+  const isRefuel = document.getElementById('refuelSwitch').checked;
+  if (isRefuel) {
+    const source = document.getElementById('tankerNoOrPump').value;
+    const person = document.getElementById('dieselPersonName').value;
+    const qty = document.getElementById('dieselDumpLtrs').value;
+    const odo = document.getElementById('vehicleOdoReading').value;
+    if (!source || !person || !qty || qty <= 0 || !odo || odo <= 0) {
+      showToast(" Fuel Details Incomplete ❌", "error");
+      return;
+    }
+  }   
+  
+  // 4. CONFIRMATION & LOCKING
+  showKapConfirm(
+    "Locking Header Data",
+    "Confirming to lock Personnel, Vehicle, and Fueling data.",
+    function() {
+      activateDieselShelf();
+      // A. LOCK PERSONNEL & REMARKS
+      document.getElementById('sel-operator').disabled = true;
+      document.getElementById('sel-supervisor').disabled = true;
+      document.getElementById('sel-incharge').disabled = true;
+      remarkEl.disabled = true;
+      remarkEl.style.backgroundColor = "#f1f5f9";
+      // B. LOCK DATE & LOCATION
+      document.getElementById('logSheetDate').disabled = true;
+      document.getElementById('sel-site').disabled = true;
+      document.getElementById('sel-village').disabled = true;
+      document.getElementById('sel-location').disabled = true;
+      // C. UNLOCK ACTIVITY ZONE
+      const workWrapper = document.getElementById('activity-wrapper');
+      if (workWrapper) {
+        workWrapper.style.backgroundColor = "#ffffff"; 
+        workWrapper.style.pointerEvents = "auto";
+        const ccSelect = document.getElementById('logModCCId');
+        if(ccSelect) ccSelect.disabled = false;
+        
+        // Ensure the chameleon grid is rendered if not already
+        const modId = document.getElementById('logSheetModuleID').value;
+        if (typeof renderModuleGrid === "function") renderModuleGrid(modId);
+      }
+    }
+  );
+}
+/**
+ * Check Fuel Validation & Update Button State
+ */
+function checkFuelValidation() {
+  console.log(`[${mainJSHtml}][@checkFuelValidation]`);
+  const btn = document.getElementById('btn-lock-header');
+  if (!btn) return;
+  const isRefuel = document.getElementById('refuelSwitch').checked;
+  const vehNo = document.getElementById('logVehicleID').value;  
+  
+  // Also check if Personnel are selected
+  const op = document.getElementById('sel-operator').value;
+  const sup = document.getElementById('sel-supervisor').value;
+  const inc = document.getElementById('sel-incharge').value;
+  // Debug log
+  console.log(`[${mainJSHtml}][@checkFuelValidation] -> Vehicle: ${vehNo || 'None'}, Op: ${op || 'Empty'}, Sup: ${sup || 'Empty'}, Inc: ${inc || 'Empty'}`);
+  // Button stays grey until Vehicle AND Personnel are ready
+  if (!vehNo || vehNo.length < 4 || !op || !sup || !inc) {
+    btn.innerHTML = "Vehicle & Fuel Data";
+    btn.style.backgroundColor = "#e2e8f0";
+    btn.style.color = "#64748b";
+    btn.style.border = "1px solid #cbd5e1";
+    return;
+  }  
+  // CONSTANTS FOR COLORS
+  const COL_DEFAULT_BG = "#e2e8f0";
+  const COL_DEFAULT_TXT = "#64748b";
+  const COL_WARNING_BG = "#f59e0b";
+  const COL_READY_BG = "var(--kap-primary)";
+  const COL_WHITE = "#ffffff";
+  // STATE 1: No Vehicle Selected
+  if (!vehNo || vehNo.length < 4) {
+    btn.innerHTML = "Vehicle & Fuel Data";
+    btn.style.backgroundColor = COL_DEFAULT_BG;
+    btn.style.color = COL_DEFAULT_TXT;
+    btn.style.border = "1px solid #cbd5e1";
+    return;
+  }
+  // STATE 2: Vehicle Selected, No Fuel
+  if (!isRefuel) {
+    btn.innerHTML = "Click to Save Only Vehicle";
+    btn.style.backgroundColor = COL_READY_BG;
+    btn.style.color = COL_WHITE;
+    btn.style.border = "none";
+    return;
+  }
+  // STATE 3 & 4: Fuel Logic
+  const source = document.getElementById('tankerNoOrPump').value;
+  const person = document.getElementById('dieselPersonName').value;
+  const qty = document.getElementById('dieselDumpLtrs').value;
+  const odo = document.getElementById('vehicleOdoReading').value;
+  // Check if ALL 4 fields have data
+  const isFuelReady = (source && person && qty > 0 && odo > 0);
+  if (!isFuelReady) {
+    // STATE 3: Fueling In Progress
+    btn.innerHTML = "Enter Refuelling Data";
+    btn.style.backgroundColor = COL_WARNING_BG;
+    btn.style.color = COL_WHITE;
+    btn.style.border = "none";
+  } else {
+    // STATE 4: Fueling Complete
+    btn.innerHTML = "Save Vehicle & Fuel Data";
+    btn.style.backgroundColor = COL_READY_BG;
+    btn.style.color = COL_WHITE;
+    btn.style.border = "none";
+  }
+}
+/**
+ * Validate Max Diesel Quantity (Max 499)
+ */
+function validateDieselQty(input) {
+  const qty = parseFloat(input.value);
+  if (qty > 499) {
+    showToast(" Capacity Exceeded! Max limit is 499 Liters ⚠️", "error");
+    input.value = "";
+    input.style.border = "2px solid red";
+    setTimeout(() => input.style.border = "1px solid #cbd5e1", 3000);
+    return;
+  }
+}
+/* ============================================================================
+   5. CHAMELEON ENGINE (Dynamic Grid)
+   ============================================================================ */
+/**
+ * Render Module Grid (3-Column Layout)
+ */
+function renderModuleGrid(moduleId) {
+  const container = document.getElementById('module-work-zone');
+  const ccSelect = document.getElementById('logModCCId');
+  console.log(`[${mainJSHtml}][@renderModuleGrid]`);
+  if (!container) {
+    console.log(`[${mainJSHtml}][@renderModuleGrid] >>> !container`);
+    return;
+  }
+  const moduleSchema = window.GLOBAL_MODULES.find(m => m.moduleId === moduleId);
+  if (!moduleSchema){
+    console.log(`[${mainJSHtml}][@renderModuleGrid] >>> !moduleSchema`);
+    return;
+  }  
+  container.innerHTML = '';
+  // 1. Check if Cost Center is selected
+  const isCCSelected = ccSelect && ccSelect.value !== "";
+  // 2. Set the Visual State immediately
+  if (!isCCSelected) {
+    container.style.opacity = "0.4";
+    container.style.pointerEvents = "none";
+    container.style.filter = "grayscale(1)";
+  } else {
+    container.style.opacity = "1";
+    container.style.pointerEvents = "auto";
+    container.style.filter = "grayscale(0)";
+  }
+  const fields = moduleSchema.fields;
+  console.log(`[${mainJSHtml}][@renderModuleGrid >>>> fields ] ${fields}`);
+  const groups = [
+    { label: fields.moduleKey4?.label, s: 2, e: 3, r: 4, type: 'TIME' },
+    { label: fields.moduleKey7?.label, s: 5, e: 6, r: 7, type: 'NUMBER' },
+    { label: fields.moduleKey10?.label, s: 8, e: 9, r: 10, type: 'NUMBER' },
+    { label: fields.moduleKey13?.label, s: 11, e: 12, r: 13, type: 'NUMBER' },
+    { label: fields.moduleKey16?.label, s: 14, e: 15, r: 16, type: 'NUMBER' }
+  ];
+  groups.forEach(group => {
+    if (group.label) {
+      const rowHtml = `
+        <div class="log-row-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: flex-end; margin-top: 4px;">
+          <div class="log-form-group">
+            <label class="log-label" style="font-size: 10px; margin-bottom: 2px;">${fields['moduleKey' + group.s].label}</label>
+            <input type="${group.type === 'TIME' ? 'time' : 'number'}" 
+                   id="mk_${group.s}" class="log-input" 
+                   oninput="runDynamicCalc(${group.s}, ${group.e}, ${group.r}, '${group.label}', '${group.type}')"
+                   onchange="validateChameleonLogic(false)"> </div>
+          
+          <div class="log-form-group">
+            <label class="log-label" style="font-size: 10px; margin-bottom: 2px;">${fields['moduleKey' + group.e].label}</label>
+            <input type="${group.type === 'TIME' ? 'time' : 'number'}" 
+                    id="mk_${group.e}" class="log-input" 
+                    oninput="runDynamicCalc(${group.s}, ${group.e}, ${group.r}, '${group.label}', '${group.type}')"
+                    onchange="validateChameleonLogic(false)"> </div>
+          
+          <div class="log-form-group">
+            <label class="log-label" style="font-size: 10px; margin-bottom: 2px; color: var(--kap-primary); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${group.label}
+            </label>
+            <input type="text" id="mk_${group.r}" class="log-input" readonly 
+                   style="background-color: #f1f5f9; color: #334155; font-weight: bold; text-align: center; border: 1px solid #cbd5e1;" placeholder="0.00">
+          </div>
+        </div>`;
+      container.insertAdjacentHTML('beforeend', rowHtml);
+    }
+  });
+  // Final Remarks Section
+  container.insertAdjacentHTML('beforeend', `
+      <div class="log-form-group" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
+          <label class="log-label" id="lbl-line-remarks" style="color:#be123c; font-weight:bold;">Activity Details *</label>
+          <textarea id="logLineRemarks" class="log-input" rows="2" style="height: auto; min-height: 60px;"
+                    placeholder="Mandatory: Describe what was done in this specific time/reading slot..."></textarea>
+      </div>
+  `);
+}
+/**
+ * Chameleon Central Validator
+ */
+async function validateChameleonLogic(isSilent = false) {
+  const modSelect = document.getElementById('logSheetModuleID');
+  const moduleId = modSelect.value;
+  const ccSelect = document.getElementById('logModCCId');
+  const ccText = ccSelect.options[ccSelect.selectedIndex].text.toUpperCase();
+  const isIdle = ccText.includes("IDLE");
+  const userName = window.USER_NAME || "User"; // FIXED: Removed hardcoded name
+  const schema = window.GLOBAL_MODULES.find(m => m.moduleId === moduleId);
+  const fields = schema.fields;
+  const groups = [
+    { s: 2, e: 3, r: 4, type: 'TIME' },
+    { s: 5, e: 6, r: 7, type: 'NUMBER' },
+    { s: 8, e: 9, r: 10, type: 'NUMBER' },
+    { s: 11, e: 12, r: 13, type: 'NUMBER' },
+    { s: 14, e: 15, r: 16, type: 'NUMBER' }
+  ];
+  console.log(`[${mainJSHtml}][@async validateChameleonLogic] modSelect ${modSelect} isIdle ${isIdle}`);
+  for (let group of groups) {
+    const sEl = document.getElementById(`mk_${group.s}`);
+    const eEl = document.getElementById(`mk_${group.e}`);
+    const rEl = document.getElementById(`mk_${group.r}`);
+    // CRITICAL FIX: Check if ALL elements exist before proceeding
+    if (!sEl || !eEl || !rEl || !fields['moduleKey' + group.s]) continue;
+    console.log(`[${mainJSHtml}][@async validateChameleonLogic] Inside - if !sEl || !eEl || !rEl`);
+    let sVal = sEl.value;
+    let eVal = eEl.value;
+    // --- TIME LOGIC ---
+    if (group.type === 'TIME' && sVal && eVal) {
+      const [sH, sM] = sVal.split(':').map(Number);
+      const [eH, eM] = eVal.split(':').map(Number);
+      let diff = (eH * 60 + eM) - (sH * 60 + sM);
+      let crossedMidnight = false;
+      if (diff < 0) {
+        diff += 1440;
+        crossedMidnight = true;
+      }
+      // Visual format (H.MM)
+      const hrs = Math.floor(diff / 60);
+      const mins = diff % 60;
+      const visualTime = `${hrs}.${mins.toString().padStart(2, '0')}`;
+      console.log(`[${mainJSHtml}][@async validateChameleonLogic] visualTime ${visualTime}`);
+      // Midnight cross confirmation
+      if (crossedMidnight && !isSilent) {
+        const confirmed = await new Promise(resolve => {
+          showKapConfirm(
+            "Midnight Cross Detected",
+            `${userName}, End Time Crossed Midnight. Confirm Working Hours: ${visualTime}?`,
+            () => resolve(true),
+            () => resolve(false)
+          );
+        });
+        
+        if (!confirmed) {
+          eEl.value = ""; 
+          eEl.focus();
+          return false; 
+        }
+      }
+      rEl.value = visualTime;
+    }
+    // --- READING/KM LOGIC ---
+    if (group.type === 'NUMBER' && sVal) {
+      if (isIdle) {
+        // IDLE logic: Force end to match start
+        eEl.value = sVal;
+        eEl.disabled = true;
+        eEl.style.backgroundColor = "#f1f5f9";
+        rEl.value = "0.00";
+        if (!isSilent) showToast(`Idle Mode: Reading Locked ℹ️`, "info");
+      } else {
+        eEl.disabled = false;
+        eEl.style.backgroundColor = "white";
+        
+        if (eVal) {
+          const res = parseFloat(eVal) - parseFloat(sVal);
+          
+          // Negative reading check
+          if (res < 0 && !isSilent) {
+            showToast("Invalid Reading Sequence!", "error"); 
+            
+            showKapConfirm(
+              "Reading Error Detected",
+              `${userName}, End Reading (${eVal}) is less than Start Reading (${sVal}). How would you like to fix this?`,
+              () => { // Confirm Action
+                eEl.value = "";
+                eEl.focus();
+              },
+              () => { // Cancel Action
+                sEl.value = "";
+                eEl.value = "";
+                sEl.focus();
+              },
+              "CORRECT END READING",
+              "RESET BOTH"
+            );
+            
+            rEl.value = "0.00";
+            return false;
+          }
+          
+          // If valid, update the result
+          rEl.value = (res >= 0) ? res.toFixed(2) : "0.00";
+        }
+      }
+    }
+  }
+  return true;
+}
+/**
+ * Run Dynamic Calculation (Redirects to Central Validator)
+ */
+async function runDynamicCalc(sKey, eKey, rKey, label, type) {
+  console.log(`[${mainJSHtml}][@async runDynamicCalc] ${label}`);
+  // Redirect to central validator
+  await validateChameleonLogic(true);
+}
+/**
+ * Calculate Time Difference Helper
+ */
+function calculateTimeDiff(start, end) {
+  console.log(`[${mainJSHtml}][@calculateTimeDiff]`);
+  const s = start.split(':');
+  const e = end.split(':');
+  const diff = (parseInt(e[0]) * 60 + parseInt(e[1])) - (parseInt(s[0]) * 60 + parseInt(s[1]));
+  if (diff < 0) return "0.00";
+  const hrs = Math.floor(diff / 60);
+  const mins = diff % 60;
+  return `${hrs}.${mins.toString().padStart(2, '0')}`;
+}
+/**
+ * Toggle Activity Row
+ */
+function toggleActivityRow(switchEl, zoneId) {
+  const zone = document.getElementById(zoneId);
+  if (switchEl.checked) {
+    console.log(`[${mainJSHtml}][@toggleActivityRow] switchEl.checked`);
+    // 1. Reveal the input fields
+    zone.classList.add('active');
+    // 2. If Diesel panel is still open, park it now
+    const shelf = document.getElementById('diesel-shelf');
+    if (shelf && shelf.style.display === 'none') {
+      activateDieselShelf();
+    }
+  } else {
+    // Hide the input fields
+    zone.classList.remove('active');
+  }
+}
+/**
+ * Sample Calculation for Working Time (Legacy/Example)
+ */
+function runCalculations() {
+  const start = parseFloat(document.getElementById('start_hr').value) || 0;
+  const end = parseFloat(document.getElementById('end_hr').value) || 0;
+  const title = document.getElementById('title_work_time');
+  if (end >= start) {
+    console.log(`[${mainJSHtml}][@runCalculations] end >= start`);
+    const total = (end - start).toFixed(2);
+    title.innerHTML = `Working Time: <span style="color:#166534">${total} Hrs</span>`;
+  } else {
+    title.innerHTML = `Working Time: <span style="color:#b91c1c">0.00 (Error)</span>`;
+  }
+}
+/* ============================================================================
+   6. SUBMISSION & DASHBOARD FUNCTIONS
+   ============================================================================ */
+/**
+ * Submit Log Entry to Server
+ */
+function submitLog() {
+  console.log("🚀 [submitLog] Initializing Submission...");
+  // 1. Get Core IDs
+  var masterId = document.getElementById('logSheetTxnMasterId').value;
+  var moduleId = document.getElementById('logSheetModuleID').value;
+  console.log("🆔 MasterId: " + masterId + " | ModuleId: " + moduleId);
+  if (!masterId || !moduleId) {
+    showToast("⚠️ Transaction ID or Module is missing!", "error");
+    return;
+  }
+  // 2. Assemble Payload
+  var payload = {
+    masterId: masterId,
+    moduleID: moduleId,
+    entryDate: document.getElementById('logSheetDate').value,
+    operator: document.getElementById('sel-operator').value,
+    supervisor: document.getElementById('sel-supervisor').value,
+    siteIncharge: document.getElementById('sel-incharge').value,
+    siteID: document.getElementById('sel-site').value,
+    village: document.getElementById('sel-village').value,
+    location: document.getElementById('sel-location').value,
+    ccID: document.getElementById('logModCCId').value,
+    vehicleID: document.getElementById('logVehicleID').value,
+    owner: document.getElementById('logVehicleOwner').value,
+    remarks: document.getElementById('workRemarkHead').value,
+    isRefuel: document.getElementById('refuelSwitch').checked,
+    fuelSource: document.getElementById('tankerNoOrPump').value,
+    fuelQty: document.getElementById('dieselDumpLtrs').value,
+    odoReading: document.getElementById('vehicleOdoReading').value,
+    fuelPerson: document.getElementById('dieselPersonName').value,
+    activityData: {
+      moduleKey1: document.getElementById('logSheetDate').value,
+      lineRemarks: document.getElementById('logLineRemarks') ? document.getElementById('logLineRemarks').value : ""
+    }
+  };
+  // 3. Dynamic Loop (Keys 2-18)
+  for (var i = 2; i <= 18; i++) {
+    var el = document.getElementById('mk_' + i);
+    if (el) payload.activityData['moduleKey' + i] = el.value;
+  }
+  console.log("📦 Payload ready for transfer.");
+  // 4. UI Engagement
+  KAP.API.toggleLoader(true, "Finalizing Submission...");
+  // 5. Native Google Call
+  console.log("📡 Dispatching server request via google.script.run...");
+  google.script.run
+    .withSuccessHandler(function(res) {
+      console.log("📥 Server Response Received:", res);
+      // TODO: ENHANCE THIS FOR DASHBOARD
+      if (res && res.ok === true) {
+        showToast("Log Book Saved Successfully! ✅", "success");
+        KAP.API.toggleLoader(false);
+        resetForm();
+      } else {
+        var err = res ? res.message : "Unknown error";
+        console.error("❌ Server rejected entry:", err);
+        showToast("Error: " + err, "error");
+        KAP.API.toggleLoader(false);
+      }
+    })
+    .withFailureHandler(function(err) {
+      console.error("💥 Critical communication failure:", err);
+      showToast("System Alert: " + err, "error");
+      KAP.API.toggleLoader(false);
+    })
+    .saveDailyLogEntry(payload);
+}
+/**
+ * Clean Reset Function
+ */
+function resetForm() {
+  // Clear the transaction-specific fields only
+  const fields = ['vehicleOdoReading', 'dieselDumpLtrs', 'workRemarkHead', 'logLineRemarks'];
+  fields.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  // Reset fuel switch
+  const sw = document.getElementById('refuelSwitch');
+  if (sw) sw.checked = false;
+  // Clear module data (mk_2 to mk_18)
+  for (let i = 2; i <= 18; i++) {
+    const el = document.getElementById('mk_' + i);
+    if (el) el.value = "";
+  }
+  console.log("🧹 UI Cleaned for next entry.");
+}
+/**
+ * Activate Diesel Shelf (Summary Display)
+ */
+function activateDieselShelf() {
+  console.log(`[${mainJSHtml}][@activateDieselShelf]`);
+  const group3 = document.getElementById('group-3');
+  const shelf = document.getElementById('diesel-shelf');
+  const vehNo = document.getElementById('logVehicleID').value;
+  const isRefuel = document.getElementById('refuelSwitch').checked;
+  const qty = document.getElementById('dieselDumpLtrs').value || "0";
+  const odo = document.getElementById('vehicleOdoReading').value || "0";
+  // Update labels
+  document.getElementById('shelf-vehicle-info').innerHTML = `Vehicle : <b>${vehNo}</b>`;
+  document.getElementById('shelf-fuel-info').textContent = isRefuel ? `⛽ ${qty} Liters` : "No Fuel";
+  document.getElementById('shelf-odo-info').textContent = `KM Reading ${odo}`;
+  // Hide the Prep Panel, Show the Shelf
+  if (group3) group3.style.display = 'none';
+  if (shelf) shelf.style.display = 'block';
+  showToast("📌 Vehicle & Header Locked", "success");
+}
+/* ============================================================================
+   7. UI HELPER FUNCTIONS
+   ============================================================================ */
+/**
+ * Show Toast Notification with Audio
+ */
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  // 1. THE AUDIO ENGINE
+  const sounds = {
+    success: "data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YRAAAAAA//8BAAAABQAAAP//AAACAAAA",
+    error: "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQQAAAAAAP//AA==",
+    warning: "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQQAAAAAAP//AA=="
+  };
+  try {
+    const audio = new Audio(sounds[type] || sounds.success);
+    audio.volume = 1;
+    audio.play();
+  } catch (e) {
+    console.warn("Audio blocked: User must interact with screen first.");
+  }
+  // 2. THE VISUAL TOAST
+  const toast = document.createElement('div');
+  const icons = { 'success': '✅', 'error': '❌', 'warning': '⚠️', 'info': '📌' };
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `<span>${icons[type] || '🔔'}</span> <span>${message}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.animation = 'fadeOut 1s ease-in forwards';
+    setTimeout(() => toast.remove(), 1000);
+  }, 4000);
+}
+/**
+ * Show KAP Confirmation Modal
+ */
+function showKapConfirm(title, message, onConfirm, onCancel, 
+      confirmText = "CONFIRM", cancelText = "CANCEL") {
+  const existing = document.getElementById('kap-modal-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = "kap-modal-overlay";
+  overlay.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; align-items:center; justify-content:center; padding:20px;";
+  const box = document.createElement('div');
+  box.style = "background:white; padding:24px; border-radius:4px; width:100%; max-width:320px; box-shadow: 0 19px 38px rgba(0,0,0,0.30);";
+  box.innerHTML = `
+    <h3 style="margin:0 0 15px 0; color:#202124; font-size:18px; font-weight:500;">${title}</h3>
+    <p style="color:#5f6368; font-size:14px; line-height:1.5; margin-bottom:24px;">${message}</p>
+    <div style="display:flex; gap:12px; justify-content:flex-end;">
+      <button id="kap-modal-cancel" style="background:#f1f5f9; border:1px solid #cbd5e1; color:#475569; padding:8px 16px; border-radius:4px; cursor:pointer; font-weight:500;">${cancelText}</button>
+      <button id="kap-modal-confirm" style="background:#1a73e8; border:none; color:white; padding:8px 16px; border-radius:4px; cursor:pointer; font-weight:500;">${confirmText}</button>
+    </div>
+  `;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  document.getElementById('kap-modal-cancel').onclick = () => { 
+    overlay.remove(); 
+    if (onCancel) onCancel(); 
+  };
+  document.getElementById('kap-modal-confirm').onclick = () => { 
+    overlay.remove(); 
+    if (onConfirm) onConfirm(); 
+  };
+}
+/* ============================================================================
+   8. UTILITY FUNCTIONS
+   ============================================================================ */
+/**
+ * Reset Dropdown to Default Option
+ */
+function resetDropdown(el, text) {
+  console.log(`[${mainJSHtml}][@resetDropdown]`); 
+  if (el) el.innerHTML = `<option value="">${text}</option>`;
+}
+/**
+ * Add Option to Dropdown
+ */
+function addOption(el, val, text) {
+  if (!el) return;
+  const opt = document.createElement('option');
+  opt.value = val;
+  opt.textContent = text;
+  el.appendChild(opt);
+}
+/**
+ * Populate Cost Centers Dropdown
+ */
+function populateCostCenters(ccList) {
+  const sel = document.getElementById('logModCCId');
+  console.log(`[${mainJSHtml}][@populateCostCenters sel] ${sel}`); 
+  if (!sel) return;
+  resetDropdown(sel, '-- Select Activity --');
+  ccList.forEach(cc => {
+    addOption(sel, cc.id, cc.name); 
+  });
+}
+/**
+ * Generate Master Transaction ID
+ */
+function generateMasterId() {
+  const masterIdInput = document.getElementById('logSheetTxnMasterId');
+  if (!masterIdInput) return;
+  // If an ID already exists, DO NOT overwrite it
+  if (masterIdInput.value && masterIdInput.value.includes('/')) return;
+  // Use the Module Name (Chameleon Style) instead of the raw ID
+  const modSelect = document.getElementById('logSheetModuleID');
+  const modName = modSelect.options[modSelect.selectedIndex].text.replace(/\s/g, '').replace(/\/$/, '');
+  const dateVal = document.getElementById('logSheetDate').value; 
+  const now = new Date();
+  const timestamp = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getFullYear()).substring(2)}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+  masterIdInput.value = `${modName}/${timestamp}`;
+  console.log(`[${mainJSHtml}][generateMasterId MasterID Locked] ${masterIdInput.value}`);
+}
+/**
+ * Handle Village Selection Change
+ */
+function onVillageChange(villageName) {
+  console.log(`[${mainJSHtml}][@generateMasterId onVillageChange]`);
+  const siteId = document.getElementById('sel-site').value;
+  const locSelect = document.getElementById('sel-location');
+  if (!villageName || !siteId) return;
+  resetDropdown(locSelect, '-- Select Location --');
+  if (window.GLOBAL_LOC_DATA[siteId] && window.GLOBAL_LOC_DATA[siteId][villageName]) {
+    window.GLOBAL_LOC_DATA[siteId][villageName].forEach(loc => {
+      addOption(locSelect, loc, loc);
+    });
+  }
+}
+/**
+ * Handle Location Selection Change
+ */
+function onLocationChange(locationId) {
+  console.log(`[${mainJSHtml}][@onLocationChange locationId : ] ${locationId}`);
+  if (!locationId) return;
+  const group2 = document.getElementById('group-2');
+  if (group2) group2.style.display = 'none';
+  const lockMsg = document.getElementById('location-lock-msg');
+  if (lockMsg) {
+    lockMsg.innerHTML = `📌 <b>Location ${locationId} Locked.</b> Re-Select Site to Update.`;
+    lockMsg.style.display = 'block';
+  }
+}
+/**
+ * Handle Logic Gate (Cost Center Selection)
+ */
+async function handleLogicGate(el) {
+  const zone = document.getElementById('module-work-zone');
+  const wrapper = document.getElementById('activity-wrapper');
+  if (el.value) {
+    // 1. Force CSS Unlocking
+    wrapper.style.pointerEvents = "auto"; 
+    wrapper.style.backgroundColor = "#ffffff";
+    // 2. Wake up the grid visually
+    zone.classList.add('cockpit-active');
+    showToast("Cockpit Ready: Inputs Unlocked 🔓", "warning");
+    // 3. Render the dynamic grid if not already there
+    const modId = document.getElementById('logSheetModuleID').value;
+    if (typeof renderModuleGrid === "function") {
+      await renderModuleGrid(modId);
+    }
+    // 4. Trigger the Chameleon Validation Logic
+    await validateChameleonLogic(true);
+  } else {
+    // Reset if they clear the selection
+    zone.classList.remove('cockpit-active');
+    wrapper.style.pointerEvents = "none";
+    wrapper.style.backgroundColor = "#f8fafc";
+  }
+}
+</script>
