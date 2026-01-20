@@ -1,6 +1,6 @@
 KAP Core hared Library for GAS Project
 - Technical Reference
-// Identifier: KAP (recommended)
+// Identifier: KAP (Must)
 const { Cache, Fmt, Validate, Sheets, Ids, Resp, Html } = KAP.Core;
 Module Reference | kapCoreCache.gs | Cache 
 /**
